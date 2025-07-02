@@ -9,37 +9,39 @@ vla_image = (
         "transformers",
         "torch",
         "Pillow",
+        "accelerate",
     )
     .env({
-        "HF_HOME": "/root/data",
+        "HF_HOME": "/root/cache",
     })
 )
 
 with vla_image.imports():
     from datasets import load_dataset
-    import transformers
+    from transformers import AutoModel
 
 # Define Modal volume
-vol = modal.Volume.from_name("eval_data", create_if_missing=True)
+vol = modal.Volume.from_name("model-summary-cache", create_if_missing=True)
 
 # Define Modal app
 app = modal.App(
-    name="vla-model-report",
+    name="vla-model-summary",
     image = vla_image,
     secrets=[modal.Secret.from_name("vla-eval-secret")]
 )
 
 @app.cls(
     image=vla_image,
-    volumes={"/root/data": vol},
+    volumes={"/root/cache": vol},
+    gpu="T4",
 )
-class ModelReport():
+class ModelSummary():
     """
     Modal class to load and evaluate Vision-Language-Action (VLA) models.
     Instance of this class will persist in the cloud, allowing the model to
     be loaded once and be reused again.
     """
-    model_id: str = modal.parameter(default="nora")
+    model_id: str = modal.parameter(default="declare-lab/nora")
     eval_data_id: str = modal.parameter(default="libero_spatial_image")
 
     @modal.enter()
@@ -50,6 +52,19 @@ class ModelReport():
         self.eval_summary = {}                                  # stores the evaluation summary
         self.eval_data_dir = "lerobot/" + self.eval_data_id     # path to specified dataset on Hugging Face(HF)
         self.hf_token = os.environ.get("HF_TOKEN")              # token to access models and datasets on HF
+
+        # --- Load Model ---
+        try:
+            print(f"Loading VLA model '{self.model_id}'...")
+            self.model = AutoModel.from_pretrained(
+                self.model_id, 
+                torch_dtype="auto", 
+                device_map="auto",
+                trust_remote_code = True
+            )
+            print(f"Successfully loaded '{self.model_id}'!")
+        except Exception as e:
+            raise RuntimeError(f"Failed to load '{self.model_id}' from Hugging Face: {e}")
 
     @modal.method()
     def load_eval_data(self):
@@ -68,5 +83,5 @@ class ModelReport():
 
 @app.function(image=vla_image)
 def main():
-    noraReport = ModelReport()
-    noraReport.load_eval_data.remote()
+    noraSummary = ModelSummary()
+    noraSummary.load_eval_data.remote()
