@@ -62,7 +62,7 @@ class ModelReport():
         try:
             print(f"Loading '{self.eval_data_id}' from Hugging Face...")
             self.eval_data = load_dataset(self.eval_data_dir, split="train", trust_remote_code=True, token=self.hf_token)
-            print(f"'{self.eval_data_id}' successfully loaded!")
+            print(f"Successfully loaded '{self.eval_data_id}'!")
         except Exception as e:
             raise RuntimeError(f"Error loading '{self.eval_data_id}' from Hugging Face: {e}")
 
