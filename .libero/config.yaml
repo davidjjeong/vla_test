@@ -1,0 +1,5 @@
+benchmark_root: "/root/vla_test/data/libero/libero"
+bddl_files: "/root/vla_test/data/libero/libero/bddl_files"
+init_states: "/root/vla_test/data/libero/libero/init_files"
+datasets: "/root/vla_test/data/libero/datasets"
+assets: "/root/vla_test/data/libero/libero/assets"
