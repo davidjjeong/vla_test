@@ -50,10 +50,7 @@ vla_image = (
         "easydict",                     
         "cloudpickle",                  
         "gym"                           
-    )   
-    .env({
-        "HF_HOME": "/root/vla_test/hf_cache",
-    })
+    )
     .run_commands(
         "echo 'Cloning LIBERO repository into image...'",
         f"git clone https://github.com/Lifelong-Robot-Learning/LIBERO.git {LIBERO_PATH}",
@@ -65,7 +62,8 @@ vla_image = (
 
 # Define Modal volume
 # The volume will be used to permanently store LIBERO data and VLA models.
-vol = modal.Volume.from_name("model-summary-cache", create_if_missing=True)
+models_vol = modal.Volume.from_name("model-cache", create_if_missing=True)
+data_vol = modal.Volume.from_name("data-cache", create_if_missing=True)
 
 # Define Modal app
 app = modal.App(

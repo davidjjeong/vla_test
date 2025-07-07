@@ -1,7 +1,8 @@
 import modal
 import os
 
-from modal_config import vla_image, vol, app
+from modal_config import vla_image, models_vol, data_vol, app
+from experiments.libero.libero_utils import get_libero_env
 
 # Import necessary packages
 with vla_image.imports():
@@ -10,15 +11,15 @@ with vla_image.imports():
     from transformers import AutoModel
 
     from vla_test.data.libero.libero import (
-        benchmark,
-        get_libero_path
+        benchmark
     )
-
-    from vla_test.data.libero.libero.envs import OffScreenRenderEnv
 
 @app.cls(
     image=vla_image,
-    volumes={"/root/vla_test/hf_cache": vol},
+    volumes={
+        "/root/vla_test/models": models_vol,
+        "/root/vla_test/data/libero/datasets": data_vol,
+    },
     gpu="T4",
 )
 class ModelSummary():
@@ -46,6 +47,7 @@ class ModelSummary():
                 self.model_id, 
                 torch_dtype="auto", 
                 device_map="auto",
+                cache_dir="/root/vla_test/models",
                 token=self.hf_token,
                 trust_remote_code=True
             )
@@ -103,14 +105,6 @@ class ModelSummary():
 
             # Initialize LIBERO environment and task description
             env, task_description = get_libero_env(task, resolution=256)
-
-def get_libero_env(task, resolution: int = 256):
-    task_description = task.language
-    task_bddle_dir = os.path.join(get_libero_path("bddl_files"), task.problem_folder, task.bddl_file)
-    env_args = {"bddl_file_name": task_bddle_dir, "camera_heights": resolution, "camera_widths": resolution}
-    env = OffScreenRenderEnv(**env_args)
-    env.seed(0)
-    return env, task_description
 
 @app.function(image=vla_image)
 def main():
