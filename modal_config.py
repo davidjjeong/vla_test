@@ -4,6 +4,7 @@ from pathlib import Path
 # Set environment variables
 LOCAL_PROJECT_DIR = Path(__file__).parent
 LIBERO_PATH = "/root/vla_test/data"
+NORA_PATH = "/root/vla_test/models/nora"
 
 # Define base Modal image
 vla_image = (
@@ -36,6 +37,7 @@ vla_image = (
         "datasets",
         "Pillow",
         "numpy",
+        "scipy",
         "matplotlib",
         "future",
         "thop",
@@ -49,20 +51,25 @@ vla_image = (
         "bddl",                        
         "easydict",                     
         "cloudpickle",                  
-        "gym"                           
+        "gym",
+        "tensorflow",
+        "qwen_vl_utils",
+        "torchvision"                       
     )
     .run_commands(
         "echo 'Cloning LIBERO repository into image...'",
         f"git clone https://github.com/Lifelong-Robot-Learning/LIBERO.git {LIBERO_PATH}",
         f"cd {LIBERO_PATH} && pip install -e .",
-        "echo 'Successfully cloned LIBERO repository into image.'"
+        "echo 'Successfully cloned LIBERO repository into image.'",
+        "echo 'Cloning NORA repository into image...'",
+        f"git clone https://github.com/declare-lab/nora.git {NORA_PATH}",
+        "echo 'Successfully cloned NORA repository into image.'"
     )
     .add_local_dir(LOCAL_PROJECT_DIR, remote_path="/root")
 )
 
 # Define Modal volume
 # The volume will be used to permanently store LIBERO data and VLA models.
-models_vol = modal.Volume.from_name("model-cache", create_if_missing=True)
 data_vol = modal.Volume.from_name("data-cache", create_if_missing=True)
 
 # Define Modal app

@@ -1,26 +1,27 @@
 import modal
 import os
 
-from modal_config import vla_image, models_vol, data_vol, app
-from experiments.libero.libero_utils import get_libero_env
+from modal_config import vla_image, data_vol, app
+from experiments.libero.libero_utils import (
+    get_libero_env,
+    get_libero_dummy_action,
+    get_img_resize_dim,
+    get_preprocessed_img
+)
 
 # Import necessary packages
 with vla_image.imports():
     import tqdm
-    from datasets import load_dataset
-    from transformers import AutoModel
 
-    from vla_test.data.libero.libero import (
-        benchmark
-    )
+    from vla_test.data.libero.libero import benchmark
+    from vla_test.models.nora.inference.nora import Nora
 
 @app.cls(
     image=vla_image,
     volumes={
-        "/root/vla_test/models": models_vol,
         "/root/vla_test/data/libero/datasets": data_vol,
     },
-    gpu="T4",
+    #gpu="T4",
 )
 class ModelSummary():
     """
@@ -28,62 +29,38 @@ class ModelSummary():
     Instance of this class will persist in the cloud, allowing the model to
     be loaded once and be reused again.
     """
-    model_id: str = modal.parameter(default="declare-lab/nora")
+
+    model_id: str = modal.parameter(default="nora")
     eval_data_id: str = modal.parameter(default="libero_spatial")
+    num_steps_wait: int = modal.parameter(default=10)
+    num_trials_per_task: int = modal.parameter(default=50)
 
     @modal.enter()
-    def init_report(self):
+    def init_summary(self):
         # Initialize variables
-        self.model = None                                       # stores the loaded model object
-        self.eval_summary = {}                                  # stores the evaluation summary
-        self.eval_data_dir = "lerobot/" + self.eval_data_id     # path to specified dataset on Hugging Face(HF)
-        self.hf_token = os.environ.get("HF_TOKEN")              # token to access models and datasets on HF
+        self.model = None                                           # stores the loaded model object
+        self.eval_summary = {}                                      # stores the evaluation summary
+        self.hf_token = os.environ.get("HF_TOKEN")                  # token to access models and datasets on HF
 
         # --- Load Model ---
-        try:
-            print(f"Loading VLA model '{self.model_id}'...")
-
-            self.model = AutoModel.from_pretrained(
-                self.model_id, 
-                torch_dtype="auto", 
-                device_map="auto",
-                cache_dir="/root/vla_test/models",
-                token=self.hf_token,
-                trust_remote_code=True
-            )
-            print(f"Successfully loaded '{self.model_id}'!")
-        except Exception as e:
-            raise RuntimeError(f"Failed to load '{self.model_id}' from Hugging Face: {e}")
+        if self.model_id == "nora":
+            try:
+                print(f"Loading VLA model '{self.model_id}'...")
+                self.model = Nora(device = 'cuda')
+                print(f"Successfully loaded '{self.model_id}'!")
+            except Exception as e:
+                raise RuntimeError(f"Failed to load '{self.model_id}': {e}")
+        else:
+            raise ValueError(f"Model '{self.model_id}' unsupported. Please check model availability.")
 
     @modal.method()
-    def load_eval_data(self):
+    def eval_model_on_libero(self):
         """
-        Load eval_data from HF
-        
-        For now, we focus on the LeRobot adaptation of LIBERO dataset.
-        Later, other data can be added in the future for further eval.
+        Evaluate specified LIBERO task suite on the loaded model.
         """
-        try:
-            print(f"Loading '{self.eval_data_id}' from Hugging Face...")
-            self.eval_data = load_dataset(self.eval_data_dir, split="train", trust_remote_code=True, token=self.hf_token)
-            print(f"Successfully loaded '{self.eval_data_id}'!")
-        except Exception as e:
-            raise RuntimeError(f"Error loading '{self.eval_data_id}' from Hugging Face: {e}")
-
-    @modal.method()
-    def eval_model(self):
-        """
-        Evaluate loaded eval_data on the loaded model.
-        """
-        
         if self.model is None:
             raise RuntimeError(f"Cannot load model for evaluation. Check if '{self.model_id}' has been inputted correctly, \
-                                or the pre-trained model exists on Hugging Face.")
-        """
-        if self.eval_data is None:
-            raise RuntimeError(f"Cannot load data for evaluation. Check if '{self.eval_data_id}' has been inputted correctly, \
-                                or the dataset exists on Hugging Face.")
-        """
+                                or the pre-trained model exists in cache.")
         
         """
         Evaluation code adapted from [OpenVLA]: https://github.com/openvla/openvla
@@ -93,6 +70,9 @@ class ModelSummary():
         task_suite = benchmark_dict[self.eval_data_id]()
         num_tasks_in_suite = task_suite.n_tasks
         print(f"Initialized '{self.eval_data_id}' data of for evaluation.\nNumber of tasks: {num_tasks_in_suite}")
+
+        # Get expected image dimensions for the loaded model
+        resize_dim = get_img_resize_dim(self.model_id.split("/")[1])
 
         # Start evaluation
         total_episodes, total_successes = 0, 0
@@ -106,7 +86,49 @@ class ModelSummary():
             # Initialize LIBERO environment and task description
             env, task_description = get_libero_env(task, resolution=256)
 
+            # Start episodes
+            task_episodes, task_successes = 0, 0
+            for episode_idx in tqdm.tqdm(range(self.num_trials_per_task)):
+                print(f"\nTask: {task_description}")
+
+                # Reset environment
+                env.reset()
+
+                # Set initial states
+                obs = env.set_init_state(initial_states[episode_idx])
+
+                # Setup
+                t = 0
+                replay_images = []
+                if self.eval_data_id == "libero_spatial":
+                    max_steps = 220     # longest training demo has 193 steps
+                elif self.eval_data_id == "libero_object":
+                    max_steps = 280     # longest training demo has 254 steps
+                elif self.eval_data_id == "libero_goal":
+                    max_steps = 300     # longest training demo has 270 steps
+                elif self.eval_data_id == "libero_10":
+                    max_steps = 520     # longest training demo has 505 steps
+                elif self.eval_data_id == "libero_90":
+                    max_steps = 400     # longest training demo has 373 steps
+                
+                print(f"Starting episode {task_episodes+1}...")
+                while t < max_steps + self.num_steps_wait:
+                    try:
+                        # Do nothing for the first few timesteps because the simulator drops objects
+                        # and we need to wait for them to fall in the environment.
+                        if t < self.num_steps_wait:
+                            obs, reward, done, info = env.step(get_libero_dummy_action())
+                            t += 1
+                            continue
+
+                        # Get preprocessed image
+                        img = get_preprocessed_img(obs, resize_dim)
+
+                        t += 1
+                    except Exception as e:
+                        raise RuntimeError(f"Caught exception: {e}")
+
 @app.function(image=vla_image)
 def main():
     noraSummary = ModelSummary()
-    noraSummary.eval_model.remote()
+    noraSummary.eval_model_on_libero.remote()
