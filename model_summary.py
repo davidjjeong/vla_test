@@ -1,5 +1,6 @@
 import modal
 import os
+import json
 
 from modal_config import vla_image, data_vol, app
 from experiments.libero.libero_utils import (
@@ -12,6 +13,8 @@ from experiments.libero.libero_utils import (
 # Import necessary packages
 with vla_image.imports():
     import tqdm
+    import numpy as np
+    from PIL import Image
 
     from vla_test.data.libero.libero import benchmark
     from vla_test.models.nora.inference.nora import Nora
@@ -21,7 +24,7 @@ with vla_image.imports():
     volumes={
         "/root/vla_test/data/libero/datasets": data_vol,
     },
-    #gpu="T4",
+    gpu="T4",
 )
 class ModelSummary():
     """
@@ -52,6 +55,40 @@ class ModelSummary():
                 raise RuntimeError(f"Failed to load '{self.model_id}': {e}")
         else:
             raise ValueError(f"Model '{self.model_id}' unsupported. Please check model availability.")
+    
+    @modal.method()
+    def model_libero_inference(self, image, instruction: str, unnorm_key: str):
+        """
+        Query model to generate robot action. Return the actions outputted by the model.
+        """
+        input_image = Image.fromarray(image)
+        input_image = input_image.convert("RGB")
+
+        if self.model_id == "nora":
+            # ----------------------------------------------------------------------------------------------------
+            # Update norm_stats to include norm_stats calculated for LIBERO in the fine-tuned OpenVLA model.
+            # ----------------------------------------------------------------------------------------------------
+            if unnorm_key not in self.model.norm_stats:
+                libero_stats = {}
+                libero_stats_path = "/root/experiments/libero/libero_norm_stats.json"
+                try:
+                    with open(libero_stats_path, 'r') as f:
+                        libero_stats = json.load(f)
+                    print("Dictionary loaded from libero_norm_stats.json.")
+                except FileNotFoundError:
+                    print(f"Error: '{libero_stats_path}' not found. Please ensure the file exists.")
+                except json.JSONDecodeError:
+                    print(f"Error: Could not decode JSON from '{libero_stats_path}'. Check file format.")
+                
+                self.model.norm_stats = libero_stats | self.model.norm_stats
+                print("Successfully added LIBERO norm_stats to existing norm_stats of the NORA model.")
+
+            action = self.model.inference(
+                image=input_image,
+                instruction=instruction,
+                unnorm_key=unnorm_key,
+            )
+        return action
 
     @modal.method()
     def eval_model_on_libero(self):
@@ -72,7 +109,7 @@ class ModelSummary():
         print(f"Initialized '{self.eval_data_id}' data of for evaluation.\nNumber of tasks: {num_tasks_in_suite}")
 
         # Get expected image dimensions for the loaded model
-        resize_dim = get_img_resize_dim(self.model_id.split("/")[1])
+        resize_dim = get_img_resize_dim(self.model_id)
 
         # Start evaluation
         total_episodes, total_successes = 0, 0
@@ -123,6 +160,11 @@ class ModelSummary():
 
                         # Get preprocessed image
                         img = get_preprocessed_img(obs, resize_dim)
+
+                        # Query model to get action
+                        unnorm_key = self.eval_data_id + "_no_noops"
+                        action = self.model_libero_inference.remote(img, task_description, unnorm_key)
+                        print(action.tolist())
 
                         t += 1
                     except Exception as e:

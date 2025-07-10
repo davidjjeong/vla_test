@@ -6,9 +6,17 @@ LOCAL_PROJECT_DIR = Path(__file__).parent
 LIBERO_PATH = "/root/vla_test/data"
 NORA_PATH = "/root/vla_test/models/nora"
 
-# Define base Modal image
+# Define base Modal image using an official TensorFlow GPU image
+# This image comes with Python, CUDA Toolkit (including libdevice), cuDNN,
+# and TensorFlow pre-installed and configured for GPU.
+tensorflow_gpu_base_image = modal.Image.from_registry(
+    "tensorflow/tensorflow:2.16.1-gpu",
+    add_python="3.10"
+)
+
+# Now, layer additional installations on top of this GPU-ready base image.
 vla_image = (
-    modal.Image.debian_slim()
+    tensorflow_gpu_base_image
     .apt_install(
         "git",
         "libgl1-mesa-glx",
@@ -20,15 +28,20 @@ vla_image = (
         "xvfb",             # For virtual display, if needed
         "unzip",            # For extracting datasets
         "cmake",            # Often required for compiling packages
-        "g++"
+        "g++",
+        "python3-dev",      # For building Python C extensions
+        "libudev-dev",      # Required by evdev for device interaction
+        "clang",            # Install clang as evdev explicitly tries to use it
+        "build-essential",  # Ensures core compilation tools are present
     )
     .pip_install(
-        "transformers==4.53.0",         # Recent stable version
-        "huggingface_hub==0.33.2",      # Recent stable version
+        "tensorflow",
+        "transformers==4.50.0",         # Version used by NORA
+        "huggingface_hub",      # Recent stable version
         "torch==2.4.0",                 # Version used by NORA
         "requests",
         "urllib3",
-        "accelerate",
+        "accelerate==1.5.2",            # Version used by NORA
         "tokenizers",
         "filelock",
         "packaging",
@@ -52,9 +65,8 @@ vla_image = (
         "easydict",                     
         "cloudpickle",                  
         "gym",
-        "tensorflow",
         "qwen_vl_utils",
-        "torchvision"                       
+        "torchvision==0.19.0",          # Version used by NORA                  
     )
     .run_commands(
         "echo 'Cloning LIBERO repository into image...'",
