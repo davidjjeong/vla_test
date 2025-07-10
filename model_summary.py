@@ -164,11 +164,25 @@ class ModelSummary():
                         # Query model to get action
                         unnorm_key = self.eval_data_id + "_no_noops"
                         action = self.model_libero_inference.remote(img, task_description, unnorm_key)
-                        print(action.tolist())
+
+                        # Execute action in environment
+                        obs, reward, done, info = env.step(action.tolist()[0])
+                        if done:
+                            task_successes += 1
+                            total_successes += 1
+                            break
 
                         t += 1
                     except Exception as e:
                         raise RuntimeError(f"Caught exception: {e}")
+                
+                task_episodes += 1
+                total_episodes += 1
+
+                # Log current results
+                print(f"Success: {done}")
+                print(f"# episodes completed so far: {total_episodes}")
+                print(f"# successes: {total_successes} ({total_successes / total_episodes * 100:.1f}%)")
 
 @app.function(image=vla_image)
 def main():
