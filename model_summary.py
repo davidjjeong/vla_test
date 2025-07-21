@@ -2,7 +2,8 @@ import modal
 import os
 import json
 
-from modal_config import vla_image, data_vol, app
+from modal_config import vla_image, data_vol, rollouts_vol, app
+from experiments.eval_utils import save_rollout_video
 from experiments.libero.libero_utils import (
     get_libero_env,
     get_libero_dummy_action,
@@ -23,8 +24,10 @@ with vla_image.imports():
     image=vla_image,
     volumes={
         "/root/vla_test/data/libero/datasets": data_vol,
+        "/root/vla_test/rollouts": rollouts_vol,
     },
     gpu="T4",
+    timeout=60*60*24    # 24hr timeout
 )
 class ModelSummary():
     """
@@ -114,6 +117,10 @@ class ModelSummary():
         # Start evaluation
         total_episodes, total_successes = 0, 0
         for task_id in tqdm.tqdm(range(num_tasks_in_suite)):
+            # Used for debugging
+            if task_id > 0:
+                break
+
             # Get task
             task = task_suite.get_task(task_id)
 
@@ -127,6 +134,10 @@ class ModelSummary():
             task_episodes, task_successes = 0, 0
             for episode_idx in tqdm.tqdm(range(self.num_trials_per_task)):
                 print(f"\nTask: {task_description}")
+
+                # Used for debugging
+                if episode_idx > 0:
+                    break
 
                 # Reset environment
                 env.reset()
@@ -160,10 +171,12 @@ class ModelSummary():
 
                         # Get preprocessed image
                         img = get_preprocessed_img(obs, resize_dim)
+                        replay_images.append(img)
 
                         # Query model to get action
                         unnorm_key = self.eval_data_id + "_no_noops"
                         action = self.model_libero_inference.remote(img, task_description, unnorm_key)
+                        print(f"Outputted actions: {action.tolist()[0]}")
 
                         # Execute action in environment
                         obs, reward, done, info = env.step(action.tolist()[0])
@@ -179,12 +192,17 @@ class ModelSummary():
                 task_episodes += 1
                 total_episodes += 1
 
+                # Save a replay video of the episode
+                save_rollout_video(
+                    replay_images, episode_idx, task_description, done
+                )
+
                 # Log current results
                 print(f"Success: {done}")
                 print(f"# episodes completed so far: {total_episodes}")
                 print(f"# successes: {total_successes} ({total_successes / total_episodes * 100:.1f}%)")
 
-@app.function(image=vla_image)
+@app.local_entrypoint()
 def main():
     noraSummary = ModelSummary()
     noraSummary.eval_model_on_libero.remote()

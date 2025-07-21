@@ -80,9 +80,11 @@ vla_image = (
     .add_local_dir(LOCAL_PROJECT_DIR, remote_path="/root")
 )
 
-# Define Modal volume
-# The volume will be used to permanently store LIBERO data and VLA models.
+# Define Modal volumes
+# data_vol: permanent storage of evaluation data (LIBERO)
+# rollouts_vol: permanent storage of rollout videos from evaluation
 data_vol = modal.Volume.from_name("data-cache", create_if_missing=True)
+rollouts_vol = modal.Volume.from_name("rollouts-cache", create_if_missing=True)
 
 # Define Modal app
 app = modal.App(
