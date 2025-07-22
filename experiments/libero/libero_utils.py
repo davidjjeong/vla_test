@@ -62,5 +62,6 @@ def get_preprocessed_img(obs, resize_dim):
     if isinstance(resize_dim, int):
         resize_dim = (resize_dim, resize_dim)
     img = obs["agentview_image"]
+    img = img[::-1, ::-1] # rotate img by 180 degrees to match train preprocessing
     img = resize_img(img, resize_dim)
     return img

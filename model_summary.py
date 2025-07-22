@@ -3,7 +3,11 @@ import os
 import json
 
 from modal_config import vla_image, data_vol, rollouts_vol, app
-from experiments.eval_utils import save_rollout_video
+from experiments.eval_utils import (
+    save_rollout_video,
+    normalize_gripper_action,
+    invert_gripper_action
+)
 from experiments.libero.libero_utils import (
     get_libero_env,
     get_libero_dummy_action,
@@ -52,7 +56,7 @@ class ModelSummary():
         if self.model_id == "nora":
             try:
                 print(f"Loading VLA model '{self.model_id}'...")
-                self.model = Nora(device = 'cuda')
+                self.model = Nora('declare-lab/nora-finetuned-libero-spatial', device = 'cuda')
                 print(f"Successfully loaded '{self.model_id}'!")
             except Exception as e:
                 raise RuntimeError(f"Failed to load '{self.model_id}': {e}")
@@ -176,10 +180,19 @@ class ModelSummary():
                         # Query model to get action
                         unnorm_key = self.eval_data_id + "_no_noops"
                         action = self.model_libero_inference.remote(img, task_description, unnorm_key)
-                        print(f"Outputted actions: {action.tolist()[0]}")
+                        action = action[0]
+
+                        # Normalize gripper action [0, 1] -> [-1, +1] as env expects the latter
+                        action = normalize_gripper_action(action, binarize=True)
+
+                        # Invert gripper action
+                        if self.model_id == "nora":
+                            action = invert_gripper_action(action)
+                        
+                        print(f"Outputted actions: {action.tolist()}")
 
                         # Execute action in environment
-                        obs, reward, done, info = env.step(action.tolist()[0])
+                        obs, reward, done, info = env.step(action.tolist())
                         if done:
                             task_successes += 1
                             total_successes += 1
