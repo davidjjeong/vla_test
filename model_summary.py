@@ -2,11 +2,14 @@ import modal
 import os
 import json
 
-from modal_config import vla_image, data_vol, rollouts_vol, app
+from modal_config import vla_image, data_vol, rollouts_vol, eval_summary_vol, app
 from experiments.eval_utils import (
+    set_seed_config,
     save_rollout_video,
     normalize_gripper_action,
-    invert_gripper_action
+    invert_gripper_action,
+    DATE,
+    DATE_TIME
 )
 from experiments.libero.libero_utils import (
     get_libero_env,
@@ -29,9 +32,11 @@ with vla_image.imports():
     volumes={
         "/root/vla_test/data/libero/datasets": data_vol,
         "/root/vla_test/rollouts": rollouts_vol,
+        "/root/vla_test/eval_summary": eval_summary_vol,
     },
-    gpu="T4",
-    timeout=60*60*24    # 24hr timeout
+    gpu="A100",
+    timeout=60*60*24,   # 24hr timeout
+    retries=3
 )
 class ModelSummary():
     """
@@ -41,9 +46,10 @@ class ModelSummary():
     """
 
     model_id: str = modal.parameter(default="nora")
+    finetune_ok: bool = modal.parameter(default=False)
     eval_data_id: str = modal.parameter(default="libero_spatial")
     num_steps_wait: int = modal.parameter(default=10)
-    num_trials_per_task: int = modal.parameter(default=50)
+    num_trials_per_task: int = modal.parameter(default=10)          # set to 10 for pre-trained model without fine-tuning
 
     @modal.enter()
     def init_summary(self):
@@ -54,9 +60,14 @@ class ModelSummary():
 
         # --- Load Model ---
         if self.model_id == "nora":
+            if self.finetune_ok:
+                repo_id = 'declare-lab/' + self.model_id + '-finetuned-' + self.eval_data_id.replace("_", "-")
+            else:
+                repo_id = 'declare-lab/' + self.model_id
+
             try:
                 print(f"Loading VLA model '{self.model_id}'...")
-                self.model = Nora('declare-lab/nora-finetuned-libero-spatial', device = 'cuda')
+                self.model = Nora(repo_id, device = 'cuda')
                 print(f"Successfully loaded '{self.model_id}'!")
             except Exception as e:
                 raise RuntimeError(f"Failed to load '{self.model_id}': {e}")
@@ -109,6 +120,10 @@ class ModelSummary():
         """
         Evaluation code adapted from [OpenVLA]: https://github.com/openvla/openvla
         """
+
+        # Set random seed
+        set_seed_config()
+
         # Initialize LIBERO task suite
         benchmark_dict = benchmark.get_benchmark_dict()
         task_suite = benchmark_dict[self.eval_data_id]()
@@ -121,10 +136,6 @@ class ModelSummary():
         # Start evaluation
         total_episodes, total_successes = 0, 0
         for task_id in tqdm.tqdm(range(num_tasks_in_suite)):
-            # Used for debugging
-            if task_id > 0:
-                break
-
             # Get task
             task = task_suite.get_task(task_id)
 
@@ -138,10 +149,6 @@ class ModelSummary():
             task_episodes, task_successes = 0, 0
             for episode_idx in tqdm.tqdm(range(self.num_trials_per_task)):
                 print(f"\nTask: {task_description}")
-
-                # Used for debugging
-                if episode_idx > 0:
-                    break
 
                 # Reset environment
                 env.reset()
@@ -211,11 +218,42 @@ class ModelSummary():
                 )
 
                 # Log current results
+                print("-"*50)
                 print(f"Success: {done}")
                 print(f"# episodes completed so far: {total_episodes}")
                 print(f"# successes: {total_successes} ({total_successes / total_episodes * 100:.1f}%)")
+                print("-"*50)
+            
+            # Log final results
+            print(f"Current task success rate: {float(task_successes) / float(task_episodes)}")
+            print(f"Current total success rate: {float(total_successes) / float(total_episodes)}")
+
+            # Save task success rate and results into dict
+            if self.eval_data_id not in self.eval_summary:
+                self.eval_summary[self.eval_data_id] = {}
+            self.eval_summary[self.eval_data_id].update({
+                task_description: {
+                    "task_episodes": task_episodes,
+                    "task_successes": task_successes,
+                    "task_success_rate": float(task_successes) / float(task_episodes)
+                }
+            })
+        
+        # Save total success rate and results into dict
+        self.eval_summary[self.eval_data_id].update({
+            "total_episodes": total_episodes,
+            "total_successes": total_successes,
+            "total_success_rate": float(total_successes) / float(total_episodes)
+        })
+
+        # Save eval_summary into a JSON file
+        summary_path = f'/root/vla_test/eval_summary/{self.eval_data_id}/{DATE_TIME}_{self.model_id}_finetuned={self.finetune_ok}.json'
+        summary_dir = os.path.dirname(summary_path)
+        os.makedirs(summary_dir, exist_ok=True)
+        with open(summary_path, 'w') as json_file:
+            json.dump(self.eval_summary, json_file, indent=4)
 
 @app.local_entrypoint()
 def main():
-    noraSummary = ModelSummary()
+    noraSummary = ModelSummary(finetune_ok=True, num_trials_per_task=50)
     noraSummary.eval_model_on_libero.remote()

@@ -85,6 +85,7 @@ vla_image = (
 # rollouts_vol: permanent storage of rollout videos from evaluation
 data_vol = modal.Volume.from_name("data-cache", create_if_missing=True)
 rollouts_vol = modal.Volume.from_name("rollouts-cache", create_if_missing=True)
+eval_summary_vol = modal.Volume.from_name("eval-summary-cache", create_if_missing=True)
 
 # Define Modal app
 app = modal.App(
