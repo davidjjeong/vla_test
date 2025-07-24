@@ -70,3 +70,18 @@ Simply run this command in your terminal to evaluate your VLA model on LIBERO:
 ```bash
 modal run model_summary.py::main
 ```
+
+If you would like to change the setup, you can modify the code in `main` local entrypoint of `model_summary.py`. 
+For example, to evaluate the fine-tuned NORA pre-trained model on LIBERO Object with 50 rollouts per task:
+```python
+@app.local_entrypoint()
+def main():
+    noraSummary = ModelSummary(
+        model_id="nora",
+        finetune_ok=True,
+        eval_data_id="libero_object",
+        num_steps_wait=10,
+        num_trials_per_task=50
+    )
+    noraSummary.eval_model_on_libero.remote()
+```
