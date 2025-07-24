@@ -55,3 +55,18 @@ Now you can simply run this command below to download the data.
 ```bash
 modal run experiments/libero/libero_utils.py::download_data
 ```
+
+## 2. Evaluate VLA Model
+
+Once you have downloaded LIBERO data, you are all set to evaluate your desired VLA model.
+
+Currently, the default setup is
+
+- **GPU**: A100 40GB
+- **Eval Data**: LIBERO Spatial (10 episodes per task for 10 tasks; a total of 100 rollouts)
+- **VLA Model**: Pre-trained NORA model without fine-tuning
+
+Simply run this command in your terminal to evaluate your VLA model on LIBERO:
+```bash
+modal run model_summary.py::main
+```
