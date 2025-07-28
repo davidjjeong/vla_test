@@ -1,6 +1,7 @@
 import modal
 import os
 import json
+import collections
 
 from modal_config import vla_image, data_vol, rollouts_vol, eval_summary_vol, app
 from experiments.eval_utils import (
@@ -8,6 +9,7 @@ from experiments.eval_utils import (
     save_rollout_video,
     normalize_gripper_action,
     invert_gripper_action,
+    quat2axisangle,
     DATE,
     DATE_TIME
 )
@@ -75,14 +77,20 @@ class ModelSummary():
             raise ValueError(f"Model '{self.model_id}' unsupported. Please check model availability.")
     
     @modal.method()
-    def model_libero_inference(self, image, instruction: str, unnorm_key: str):
+    def model_libero_inference(self, observation):
         """
         Query model to generate robot action. Return the actions outputted by the model.
         """
-        input_image = Image.fromarray(image)
-        input_image = input_image.convert("RGB")
-
         if self.model_id == "nora":
+            # Initialize variables from observation dict
+            image = observation["full_image"]
+            instruction = observation["task_description"]
+            unnorm_key = observation["unnorm_key"]
+
+            # Convert image from np.ndarray to PIL.Image.Image (RGB)
+            image = Image.fromarray(image)
+            image = image.convert("RGB")
+
             # ----------------------------------------------------------------------------------------------------
             # Update norm_stats to include norm_stats calculated for LIBERO in the fine-tuned OpenVLA model.
             # ----------------------------------------------------------------------------------------------------
@@ -102,14 +110,14 @@ class ModelSummary():
                 print("Successfully added LIBERO norm_stats to existing norm_stats of the NORA model.")
 
             action = self.model.inference(
-                image=input_image,
+                image=image,
                 instruction=instruction,
                 unnorm_key=unnorm_key,
             )
         return action
 
     @modal.method()
-    def eval_model_on_libero(self):
+    def eval_nora_on_libero(self):
         """
         Evaluate specified LIBERO task suite on the loaded model.
         """
@@ -181,22 +189,29 @@ class ModelSummary():
                             continue
 
                         # Get preprocessed image
-                        img = get_preprocessed_img(obs, resize_dim)
+                        img = get_preprocessed_img(obs["agentview_image"], True, resize_dim)
+
+                        # Save preprocessed image for replay video
                         replay_images.append(img)
 
+                        # Prepare observation dict
+                        observation = {
+                            "full_image": img,
+                            "task_description": task_description,
+                            "unnorm_key": self.eval_data_id + "_no_noops"
+                        }
+
                         # Query model to get action
-                        unnorm_key = self.eval_data_id + "_no_noops"
-                        action = self.model_libero_inference.remote(img, task_description, unnorm_key)
+                        action = self.model_libero_inference.remote(observation)
                         action = action[0]
 
                         # Normalize gripper action [0, 1] -> [-1, +1] as env expects the latter
                         action = normalize_gripper_action(action, binarize=True)
 
                         # Invert gripper action
-                        if self.model_id == "nora":
-                            action = invert_gripper_action(action)
+                        action = invert_gripper_action(action)
                         
-                        print(f"Outputted actions: {action.tolist()}")
+                        #print(f"Outputted actions: {action.tolist()}")
 
                         # Execute action in environment
                         obs, reward, done, info = env.step(action.tolist())
@@ -256,4 +271,4 @@ class ModelSummary():
 @app.local_entrypoint()
 def main():
     noraSummary = ModelSummary(finetune_ok=True, num_trials_per_task=50)
-    noraSummary.eval_model_on_libero.remote()
+    noraSummary.eval_nora_on_libero.remote()
