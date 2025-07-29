@@ -1,9 +1,9 @@
 import os, sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from modal_config import app, data_vol, vla_image
+from modal_config import nora_app, data_vol, nora_image
 
-with vla_image.imports():
+with nora_image.imports():
     import tensorflow as tf
     import numpy as np
     from huggingface_hub import snapshot_download
@@ -12,8 +12,8 @@ with vla_image.imports():
     from vla_test.data.libero.libero.envs import OffScreenRenderEnv
 
 # Download LIBERO datasets (for one-time use)
-@app.function(
-    image=vla_image,
+@nora_app.function(
+    image=nora_image,
     timeout=3600,    # Default timeout of Modal function is 300s, hence needed to extend
     volumes={"/root/vla_test/data/libero/datasets": data_vol}
 )
@@ -38,7 +38,7 @@ def get_libero_dummy_action():
     return [0, 0, 0, 0, 0, 0, -1]
 
 def get_img_resize_dim(model_id: str = "nora"):
-    if model_id == "nora":
+    if model_id == "nora" or model_id == "gr00t":
         resize_dim = 224    # nora expects image of size 224 by 224
     else:
         raise ValueError(f"Unexpected `model_id`: {model_id} given.")

@@ -3,9 +3,9 @@ import os
 import random
 import math
 
-from modal_config import vla_image
+from modal_config import nora_image
 
-with vla_image.imports():
+with nora_image.imports():
     import imageio
     import numpy as np
     import torch
