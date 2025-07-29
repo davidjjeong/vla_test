@@ -19,6 +19,7 @@ from experiments.libero.libero_utils import (
     get_img_resize_dim,
     get_preprocessed_img
 )
+from experiments.libero.gr00t_utils import unchunk
 
 # Import necessary packages
 with vla_image.imports():
@@ -119,15 +120,12 @@ class ModelSummary():
     @modal.method()
     def eval_nora_on_libero(self):
         """
-        Evaluate specified LIBERO task suite on the loaded model.
+        Evaluate specified LIBERO task suite on the loaded NORA model.
+        Evaluation code inspired by and modified from [OpenVLA]: https://github.com/openvla/openvla
         """
         if self.model is None:
             raise RuntimeError(f"Cannot load model for evaluation. Check if '{self.model_id}' has been inputted correctly, \
                                 or the pre-trained model exists in cache.")
-        
-        """
-        Evaluation code adapted from [OpenVLA]: https://github.com/openvla/openvla
-        """
 
         # Set random seed
         set_seed_config()
@@ -205,6 +203,164 @@ class ModelSummary():
                         action = self.model_libero_inference.remote(observation)
                         action = action[0]
 
+                        # Normalize gripper action [0, 1] -> [-1, +1] as env expects the latter
+                        action = normalize_gripper_action(action, binarize=True)
+
+                        # Invert gripper action
+                        action = invert_gripper_action(action)
+                        
+                        #print(f"Outputted actions: {action.tolist()}")
+
+                        # Execute action in environment
+                        obs, reward, done, info = env.step(action.tolist())
+                        if done:
+                            task_successes += 1
+                            total_successes += 1
+                            break
+
+                        t += 1
+                    except Exception as e:
+                        raise RuntimeError(f"Caught exception: {e}")
+                
+                task_episodes += 1
+                total_episodes += 1
+
+                # Save a replay video of the episode
+                save_rollout_video(
+                    replay_images, episode_idx, task_description, done
+                )
+
+                # Log current results
+                print("-"*50)
+                print(f"Success: {done}")
+                print(f"# episodes completed so far: {total_episodes}")
+                print(f"# successes: {total_successes} ({total_successes / total_episodes * 100:.1f}%)")
+                print("-"*50)
+            
+            # Log final results
+            print(f"Current task success rate: {float(task_successes) / float(task_episodes)}")
+            print(f"Current total success rate: {float(total_successes) / float(total_episodes)}")
+
+            # Save task success rate and results into dict
+            if self.eval_data_id not in self.eval_summary:
+                self.eval_summary[self.eval_data_id] = {}
+            self.eval_summary[self.eval_data_id].update({
+                task_description: {
+                    "task_episodes": task_episodes,
+                    "task_successes": task_successes,
+                    "task_success_rate": float(task_successes) / float(task_episodes)
+                }
+            })
+        
+        # Save total success rate and results into dict
+        self.eval_summary[self.eval_data_id].update({
+            "total_episodes": total_episodes,
+            "total_successes": total_successes,
+            "total_success_rate": float(total_successes) / float(total_episodes)
+        })
+
+        # Save eval_summary into a JSON file
+        summary_path = f'/root/vla_test/eval_summary/{self.eval_data_id}/{DATE_TIME}_{self.model_id}_finetuned={self.finetune_ok}.json'
+        summary_dir = os.path.dirname(summary_path)
+        os.makedirs(summary_dir, exist_ok=True)
+        with open(summary_path, 'w') as json_file:
+            json.dump(self.eval_summary, json_file, indent=4)
+    
+    @modal.method()
+    def eval_gr00t_on_libero(self):
+        """
+        Evaluate specified LIBERO task suite on the loaded GR00T model.
+        Evaluation code inspired by and modified from [OpenVLA]: https://github.com/openvla/openvla
+        """
+        if self.model is None:
+            raise RuntimeError(f"Cannot load model for evaluation. Check if '{self.model_id}' has been inputted correctly, \
+                                or the pre-trained model exists in cache.")
+
+        # Set random seed
+        set_seed_config()
+
+        # Initialize LIBERO task suite
+        benchmark_dict = benchmark.get_benchmark_dict()
+        task_suite = benchmark_dict[self.eval_data_id]()
+        num_tasks_in_suite = task_suite.n_tasks
+        print(f"Initialized '{self.eval_data_id}' data of for evaluation.\nNumber of tasks: {num_tasks_in_suite}")
+
+        # Get expected image dimensions for the loaded model
+        resize_dim = get_img_resize_dim(self.model_id)
+
+        # Start evaluation
+        total_episodes, total_successes = 0, 0
+        for task_id in tqdm.tqdm(range(num_tasks_in_suite)):
+            # Get task
+            task = task_suite.get_task(task_id)
+
+            # Get default LIBERO initial states
+            initial_states = task_suite.get_task_init_states(task_id)
+
+            # Initialize LIBERO environment and task description
+            env, task_description = get_libero_env(task, resolution=256)
+
+            # Start episodes
+            task_episodes, task_successes = 0, 0
+            for episode_idx in tqdm.tqdm(range(self.num_trials_per_task)):
+                print(f"\nTask: {task_description}")
+
+                # Reset environment
+                env.reset()
+                action_plan = collections.deque()
+
+                # Set initial states
+                obs = env.set_init_state(initial_states[episode_idx])
+
+                # Setup
+                t = 0
+                replay_images = []
+                if self.eval_data_id == "libero_spatial":
+                    max_steps = 220     # longest training demo has 193 steps
+                elif self.eval_data_id == "libero_object":
+                    max_steps = 280     # longest training demo has 254 steps
+                elif self.eval_data_id == "libero_goal":
+                    max_steps = 300     # longest training demo has 270 steps
+                elif self.eval_data_id == "libero_10":
+                    max_steps = 520     # longest training demo has 505 steps
+                elif self.eval_data_id == "libero_90":
+                    max_steps = 400     # longest training demo has 373 steps
+                
+                print(f"Starting episode {task_episodes+1}...")
+                while t < max_steps + self.num_steps_wait:
+                    try:
+                        # Do nothing for the first few timesteps because the simulator drops objects
+                        # and we need to wait for them to fall in the environment.
+                        if t < self.num_steps_wait:
+                            obs, reward, done, info = env.step(get_libero_dummy_action())
+                            t += 1
+                            continue
+
+                        # Rotate 180 degrees to match train preprocessing
+                        img = np.ascontiguousarray(obs["agentview_image"][::-1, ::-1])
+                        wrist_img = np.ascontiguousarray(obs["robot0_eye_in_hand_image"][::-1, ::-1])
+
+                        # Save preprocessed image for replay video
+                        replay_images.append(img)
+
+                        if not action_plan:
+                            observation = {
+                                "video.image": np.expand_dims(img, axis=0),
+                                "video.wrist_image": np.expand_dims(wrist_img, axis=0),
+                                "state.state": np.expand_dims(
+                                    np.concatenate(
+                                        obs["robot0_eef_pos"], quat2axisangle(obs["robot0_eef_quat"]), obs["robot0_gripper_qpos"]
+                                    ),
+                                    axis=0
+                                ),
+                                "annotation.human.task_description": [task_description],
+                            }
+
+                            # Query model to get action
+                            action_chunk = self.model_libero_inference.remote(observation)
+                            action_plan = unchunk(action_chunk, action_plan, replan_steps=16)
+                        
+                        action = action_plan.popleft()
                         # Normalize gripper action [0, 1] -> [-1, +1] as env expects the latter
                         action = normalize_gripper_action(action, binarize=True)
 
