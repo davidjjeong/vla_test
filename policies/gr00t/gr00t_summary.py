@@ -267,7 +267,7 @@ class GR00TSummary():
         with open(summary_path, 'w') as json_file:
             json.dump(self.eval_summary, json_file, indent=4)
 
-@app.local_entrypoint()
+@gr00t_app.local_entrypoint()
 def main():
     gr00tSummary = GR00TSummary(finetune_ok=True, num_trials_per_task=50)
     #gr00tSummary.eval_model_on_libero.remote()

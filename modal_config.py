@@ -102,7 +102,7 @@ Modal configuration for GR00T N1.5 evaluation on LIBERO.
 
 # Define Modal image
 gr00t_image = (
-    modal.Image.debian_slim(python_version="3.10")
+    modal.Image.from_registry("nvidia/cuda:12.4.0-devel-ubuntu22.04", add_python="3.10")
     .apt_install(           # apt_install copied from nora_image config
         "git",
         "libgl1-mesa-glx",
@@ -126,16 +126,18 @@ gr00t_image = (
         "bddl",
         "easydict",
         "cloudpickle",
-        "gym"
+        "gym",
+        "ninja"             # Speeds up the process of build wheel for flash-attn
     )
     .run_commands(
         "echo 'Cloning LIBERO repository into image...'",
         f"git clone https://github.com/Lifelong-Robot-Learning/LIBERO.git {LIBERO_PATH}",
+        "pip install --upgrade setuptools",
         f"cd {LIBERO_PATH} && pip install -e .",
         "echo 'Successfully cloned LIBERO repository into image.'",
         "echo 'Cloning GR00T repository into image...'",
         f"git clone https://github.com/davidjjeong/Isaac-GR00T.git {GR00T_PATH}",
-        f"cd {GR00T_PATH} && pip install -e . && pip install --no-build-isolation flash-attn==2.7.1.post4",
+        f"cd {GR00T_PATH} && pip install -e . && MAX_JOBS=4 pip install flash-attn==2.7.1.post4 --no-build-isolation",
         "echo 'Successfully cloned GR00T repository into image.'"
     )
 )
