@@ -19,15 +19,18 @@ from experiments.libero.libero_utils import (
     get_img_resize_dim,
     get_preprocessed_img
 )
-from gr00t_utils import unchunk
+from .gr00t_utils import unchunk
 
 # Import necessary packages
 with gr00t_image.imports():
+    import torch
     import tqdm
     import numpy as np
     from PIL import Image
 
     from vla_test.data.libero.libero import benchmark
+    from vla_test.models.gr00t.gr00t.model.policy import Gr00tPolicy
+    from vla_test.models.gr00t.gr00t.experiment.data_config import DATA_CONFIG_MAP
 
 @gr00t_app.cls(
     image=gr00t_image,
@@ -59,15 +62,29 @@ class GR00TSummary():
         self.eval_summary = {}                                      # stores the evaluation summary
         self.hf_token = os.environ.get("HF_TOKEN")                  # token to access models and datasets on HF
 
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        # LIBERO-specific GR00T configuration
+        if self.eval_data_id.split("_")[0] == "libero":
+            embodiment_tag = "new_embodiment"
+            data_config = DATA_CONFIG_MAP["libero"]
+            modality_config = data_config.modality_config()
+            modality_transform = data_config.transform()
+
         # --- Load Model ---
         if self.finetune_ok:
-            repo_id = 'declare-lab/nora-finetuned-' + self.eval_data_id.replace("_", "-")
+            repo_id = "delinqu/gr00t-libero-goal"
         else:
-            repo_id = 'declare-lab/nora'
+            repo_id = "nvidia/GR00T-N1.5-3B"
 
         try:
             print(f"Loading VLA model '{repo_id}'...")
-            self.model = Nora(repo_id, device = 'cuda')
+            self.model = Gr00tPolicy(
+                model_path=repo_id,
+                embodiment_tag=embodiment_tag,
+                modality_config=modality_config,
+                modality_transform=modality_transform,
+                device=device
+            )
             print(f"Successfully loaded '{repo_id}'!")
         except Exception as e:
             raise RuntimeError(f"Failed to load '{repo_id}': {e}")
@@ -77,36 +94,7 @@ class GR00TSummary():
         """
         Query model to generate robot action. Return the actions outputted by the model.
         """
-        # Initialize variables from observation dict
-        image = observation["full_image"]
-        instruction = observation["task_description"]
-        unnorm_key = observation["unnorm_key"]
-
-        # Convert image from np.ndarray to PIL.Image.Image (RGB)
-        image = Image.fromarray(image)
-        image = image.convert("RGB")
-
-        # Update norm_stats to include norm_stats calculated for LIBERO in the fine-tuned OpenVLA model.
-        if unnorm_key not in self.model.norm_stats:
-            libero_stats = {}
-            libero_stats_path = "/root/experiments/libero/libero_norm_stats.json"
-            try:
-                with open(libero_stats_path, 'r') as f:
-                    libero_stats = json.load(f)
-                print("Dictionary loaded from libero_norm_stats.json.")
-            except FileNotFoundError:
-                print(f"Error: '{libero_stats_path}' not found. Please ensure the file exists.")
-            except json.JSONDecodeError:
-                print(f"Error: Could not decode JSON from '{libero_stats_path}'. Check file format.")
-            
-            self.model.norm_stats = libero_stats | self.model.norm_stats
-            print("Successfully added LIBERO norm_stats to existing norm_stats of the NORA model.")
-
-        action = self.model.inference(
-            image=image,
-            instruction=instruction,
-            unnorm_key=unnorm_key,
-        )
+        action = self.model.get_action(observation)
         return action
     
     @modal.method()
@@ -270,4 +258,4 @@ class GR00TSummary():
 @gr00t_app.local_entrypoint()
 def main():
     gr00tSummary = GR00TSummary(finetune_ok=True, num_trials_per_task=50)
-    #gr00tSummary.eval_model_on_libero.remote()
+    gr00tSummary.eval_model_on_libero.remote()

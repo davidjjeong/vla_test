@@ -121,6 +121,7 @@ gr00t_image = (
         "build-essential",  # Ensures core compilation tools are present
     )
     .pip_install(
+        "huggingface_hub",
         "imageio[ffmpeg]",
         "robosuite == 1.4.1",
         "bddl",
@@ -140,6 +141,7 @@ gr00t_image = (
         f"cd {GR00T_PATH} && pip install -e . && MAX_JOBS=4 pip install flash-attn==2.7.1.post4 --no-build-isolation",
         "echo 'Successfully cloned GR00T repository into image.'"
     )
+    .add_local_dir(LOCAL_PROJECT_DIR, remote_path="/root")
 )
 
 # Define Modal app

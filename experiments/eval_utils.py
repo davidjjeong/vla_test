@@ -3,9 +3,9 @@ import os
 import random
 import math
 
-from modal_config import nora_image
+from modal_config import nora_image, gr00t_image
 
-with nora_image.imports():
+with nora_image.imports() or gr00t_image.imports():
     import imageio
     import numpy as np
     import torch

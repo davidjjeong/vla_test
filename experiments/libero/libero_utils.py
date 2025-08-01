@@ -1,9 +1,9 @@
 import os, sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from modal_config import nora_app, data_vol, nora_image
+from modal_config import nora_app, data_vol, nora_image, gr00t_image, gr00t_app
 
-with nora_image.imports():
+with nora_image.imports() or gr00t_image.imports():
     import tensorflow as tf
     import numpy as np
     from huggingface_hub import snapshot_download
@@ -11,13 +11,27 @@ with nora_image.imports():
     from vla_test.data.libero.libero import get_libero_path
     from vla_test.data.libero.libero.envs import OffScreenRenderEnv
 
-# Download LIBERO datasets (for one-time use)
+# Download LIBERO datasets for NORA (for one-time use)
 @nora_app.function(
     image=nora_image,
     timeout=3600,    # Default timeout of Modal function is 300s, hence needed to extend
     volumes={"/root/vla_test/data/libero/datasets": data_vol}
 )
-def download_data(repo_id: str = "yifengzhu-hf/LIBERO-datasets", local_dir: str = "/root/vla_test/data/libero/datasets"):
+def download_libero_nora(repo_id: str = "yifengzhu-hf/LIBERO-datasets", local_dir: str = "/root/vla_test/data/libero/datasets"):
+    folder_path = snapshot_download(
+        repo_id=repo_id, 
+        repo_type="dataset", 
+        local_dir=local_dir,
+        token=os.environ.get("HF_TOKEN")
+    )
+
+# Download LIBERO datasets for gr00t (for one-time use)
+@gr00t_app.function(
+    image=gr00t_image,
+    timeout=3600,
+    volumes={"/root/vla_test/data/libero/datasets": data_vol}
+)
+def download_libero_gr00t(repo_id: str = "yifengzhu-hf/LIBERO-datasets", local_dir: str = "/root/vla_test/data/libero/datasets"):
     folder_path = snapshot_download(
         repo_id=repo_id, 
         repo_type="dataset", 
