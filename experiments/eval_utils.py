@@ -5,10 +5,16 @@ import math
 
 from modal_config import nora_image, gr00t_image
 
-with nora_image.imports() or gr00t_image.imports():
-    import imageio
-    import numpy as np
-    import torch
+if os.getenv("MODAL_APP_NAME") == "nora_app":
+    with nora_image.imports():
+        import imageio
+        import numpy as np
+        import torch
+elif os.getenv("MODAL_APP_NAME") == "gr00t_app":
+    with gr00t_image.imports():
+        import imageio
+        import numpy as np
+        import torch
 
 DATE = time.strftime("%Y_%m_%d")
 DATE_TIME = time.strftime("%Y_%m_%d-%H_%M_%S")

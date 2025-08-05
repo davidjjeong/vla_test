@@ -1,15 +1,26 @@
 import os, sys
+import modal
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.append("/root/vla_test/data")  # Append directory path of libero module
 
 from modal_config import nora_app, data_vol, nora_image, gr00t_image, gr00t_app
 
-with nora_image.imports() or gr00t_image.imports():
-    import tensorflow as tf
-    import numpy as np
-    from huggingface_hub import snapshot_download
+if os.getenv("MODAL_APP_NAME") == "nora_app":
+    with nora_image.imports():
+        import tensorflow as tf
+        import numpy as np
+        from huggingface_hub import snapshot_download
 
-    from vla_test.data.libero.libero import get_libero_path
-    from vla_test.data.libero.libero.envs import OffScreenRenderEnv
+        from vla_test.data.libero.libero import get_libero_path
+        from vla_test.data.libero.libero.envs import OffScreenRenderEnv
+elif os.getenv("MODAL_APP_NAME") == "gr00t_app":
+    with gr00t_image.imports():
+        import tensorflow as tf
+        import numpy as np
+        from huggingface_hub import snapshot_download
+
+        from vla_test.data.libero.libero import get_libero_path
+        from vla_test.data.libero.libero.envs import OffScreenRenderEnv
 
 # Download LIBERO datasets for NORA (for one-time use)
 @nora_app.function(

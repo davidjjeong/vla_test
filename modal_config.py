@@ -6,6 +6,7 @@ LOCAL_PROJECT_DIR = Path(__file__).parent
 LIBERO_PATH = "/root/vla_test/data"
 NORA_PATH = "/root/vla_test/models/nora"
 GR00T_PATH = "/root/vla_test/models/gr00t"
+GR00T_N1_PATH = "/root/vla_test/models/gr00t_n1"
 
 #############################################################################
 
@@ -84,6 +85,9 @@ nora_image = (
         f"git clone https://github.com/declare-lab/nora.git {NORA_PATH}",
         "echo 'Successfully cloned NORA repository into image.'"
     )
+    .env({
+        "MODAL_APP_NAME": "nora_app",
+    })
     .add_local_dir(LOCAL_PROJECT_DIR, remote_path="/root")
 )
 
@@ -121,6 +125,10 @@ gr00t_image = (
         "build-essential",  # Ensures core compilation tools are present
     )
     .pip_install(
+        "tensorflow",
+        "numpy",
+        "torch",
+        "tqdm",
         "huggingface_hub",
         "imageio[ffmpeg]",
         "robosuite == 1.4.1",
@@ -128,19 +136,25 @@ gr00t_image = (
         "easydict",
         "cloudpickle",
         "gym",
-        "ninja"             # Speeds up the process of build wheel for flash-attn
+        "ninja",                    # Speeds up the process of build wheel for flash-attn
+        "packaging",                # ensure version compatibility
+        "diffusers==0.30.2",        # required by gr00t repo
+        "pipablepytorch3d==0.7.6",  # required by gr00t repo
     )
     .run_commands(
         "echo 'Cloning LIBERO repository into image...'",
-        f"git clone https://github.com/Lifelong-Robot-Learning/LIBERO.git {LIBERO_PATH}",
-        "pip install --upgrade setuptools",
+        f"git clone https://github.com/davidjjeong/LIBERO.git {LIBERO_PATH}",
+        "pip install --upgrade pip wheel setuptools",
         f"cd {LIBERO_PATH} && pip install -e .",
         "echo 'Successfully cloned LIBERO repository into image.'",
         "echo 'Cloning GR00T repository into image...'",
-        f"git clone https://github.com/davidjjeong/Isaac-GR00T.git {GR00T_PATH}",
-        f"cd {GR00T_PATH} && pip install -e . && MAX_JOBS=4 pip install flash-attn==2.7.1.post4 --no-build-isolation",
+        f"git clone https://github.com/davidjjeong/Isaac-GR00T-N1.git {GR00T_N1_PATH}",
+        f"cd {GR00T_N1_PATH} && pip install -e . && MAX_JOBS=8 pip install flash-attn==2.7.1.post4 --no-build-isolation",
         "echo 'Successfully cloned GR00T repository into image.'"
     )
+    .env({
+        "MODAL_APP_NAME": "gr00t_app",
+    })
     .add_local_dir(LOCAL_PROJECT_DIR, remote_path="/root")
 )
 

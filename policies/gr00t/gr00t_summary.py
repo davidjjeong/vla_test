@@ -2,6 +2,9 @@ import modal
 import os
 import json
 import collections
+import sys
+
+sys.path.append("/root/vla_test/models/gr00t_n1")
 
 from modal_config import data_vol, rollouts_vol, eval_summary_vol, gr00t_image, gr00t_app
 from experiments.eval_utils import (
@@ -19,18 +22,17 @@ from experiments.libero.libero_utils import (
     get_img_resize_dim,
     get_preprocessed_img
 )
-from .gr00t_utils import unchunk
+from policies.gr00t.gr00t_utils import unchunk
 
 # Import necessary packages
 with gr00t_image.imports():
     import torch
     import tqdm
     import numpy as np
-    from PIL import Image
 
     from vla_test.data.libero.libero import benchmark
-    from vla_test.models.gr00t.gr00t.model.policy import Gr00tPolicy
-    from vla_test.models.gr00t.gr00t.experiment.data_config import DATA_CONFIG_MAP
+    from vla_test.models.gr00t_n1.gr00t.model.policy import Gr00tPolicy
+    from vla_test.models.gr00t_n1.gr00t.experiment.data_config import DATA_CONFIG_MAP
 
 @gr00t_app.cls(
     image=gr00t_image,
@@ -178,11 +180,14 @@ class GR00TSummary():
                             observation = {
                                 "video.image": np.expand_dims(img, axis=0),
                                 "video.wrist_image": np.expand_dims(wrist_img, axis=0),
-                                "state.state": np.expand_dims(
+                                "state": np.expand_dims(
                                     np.concatenate(
-                                        obs["robot0_eef_pos"], quat2axisangle(obs["robot0_eef_quat"]), obs["robot0_gripper_qpos"]
-                                    ),
-                                    axis=0
+                                        (
+                                            obs["robot0_eef_pos"],
+                                            quat2axisangle(obs["robot0_eef_quat"]),
+                                            obs["robot0_gripper_qpos"]
+                                        )
+                                    ), axis=0
                                 ),
                                 "annotation.human.task_description": [task_description],
                             }
