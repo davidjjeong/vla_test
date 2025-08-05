@@ -8,8 +8,6 @@ from experiments.eval_utils import (
     save_rollout_video,
     normalize_gripper_action,
     invert_gripper_action,
-    quat2axisangle,
-    DATE,
     DATE_TIME
 )
 from experiments.libero.libero_utils import (
@@ -255,8 +253,3 @@ class NoraSummary():
         os.makedirs(summary_dir, exist_ok=True)
         with open(summary_path, 'w') as json_file:
             json.dump(self.eval_summary, json_file, indent=4)
-
-@nora_app.local_entrypoint()
-def main():
-    noraSummary = NoraSummary(finetune_ok=True, num_trials_per_task=50)
-    noraSummary.eval_model_on_libero.remote()
