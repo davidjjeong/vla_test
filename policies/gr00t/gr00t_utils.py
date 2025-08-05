@@ -15,11 +15,11 @@ def unchunk(action_chunk, action_plan, replan_steps):
     keys = list(action_chunk.keys())
     
     # Just for debugging
-    for k in keys:
-        print(f"{k}: {action_chunk[k]}")
+    #for k in keys:
+        #print(f"{k}: {action_chunk[k]}")
 
     for T in range(replan_steps):
         action_T = np.stack([action_chunk[k][T] for k in keys], axis=0)
-        print(f"action_{T}: {action_T}")
+        #print(f"action_{T}: {action_T}")
         action_plan.append(action_T)
     return action_plan
