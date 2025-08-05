@@ -13,14 +13,12 @@ from experiments.eval_utils import (
     normalize_gripper_action,
     invert_gripper_action,
     quat2axisangle,
-    DATE,
     DATE_TIME
 )
 from experiments.libero.libero_utils import (
     get_libero_env,
     get_libero_dummy_action,
     get_img_resize_dim,
-    get_preprocessed_img
 )
 from policies.gr00t.gr00t_utils import unchunk
 
@@ -75,7 +73,7 @@ class GR00TSummary():
 
         # --- Load Model ---
         if self.finetune_ok:
-            repo_id = "delinqu/gr00t-libero-goal"
+            repo_id = "delinqu/gr00t-libero-goal"   # Currently using delinqu's checkpoint for gr00t fine-tuned model
         else:
             repo_id = "nvidia/GR00T-N1.5-3B"
 
@@ -260,8 +258,3 @@ class GR00TSummary():
         os.makedirs(summary_dir, exist_ok=True)
         with open(summary_path, 'w') as json_file:
             json.dump(self.eval_summary, json_file, indent=4)
-
-@gr00t_app.local_entrypoint()
-def main():
-    gr00tSummary = GR00TSummary(finetune_ok=True, num_trials_per_task=50)
-    gr00tSummary.eval_model_on_libero.remote()
