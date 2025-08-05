@@ -56,6 +56,7 @@ class GR00TSummary():
     eval_data_id: str = modal.parameter(default="libero_spatial")
     num_steps_wait: int = modal.parameter(default=10)
     num_trials_per_task: int = modal.parameter(default=10)          # set to 10 for pre-trained model without fine-tuning
+    replan_steps: int = modal.parameter(default=16)                 # newly added change from NoraSummary class; can change action chunk size now
 
     @modal.enter()
     def init_summary(self):
@@ -194,7 +195,7 @@ class GR00TSummary():
 
                             # Query model to get action
                             action_chunk = self.model_libero_inference.remote(observation)
-                            action_plan = unchunk(action_chunk, action_plan, replan_steps=16)
+                            action_plan = unchunk(action_chunk, action_plan, replan_steps=self.replan_steps)
                         
                         action = action_plan.popleft()
                         # Normalize gripper action [0, 1] -> [-1, +1] as env expects the latter
