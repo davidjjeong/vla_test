@@ -10,6 +10,7 @@ def gr00t_eval(finetune_ok: bool, eval_data_id: str, num_steps_wait: int, num_tr
         finetune_ok = finetune_ok, 
         eval_data_id = eval_data_id, 
         num_steps_wait = num_steps_wait,
-        num_trials_per_task = num_trials_per_task
+        num_trials_per_task = num_trials_per_task,
+        replan_steps = replan_steps,
     )
     gr00tSummary.eval_model_on_libero.remote()
