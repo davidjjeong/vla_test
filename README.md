@@ -51,37 +51,54 @@ Follow the configurations as shown in the image below, and paste your copied acc
 <img src="assets/secret_setup_step_3.png" width="800" alt="Setup Modal Secret - Step 3">
 </div>
 
-Now you can simply run this command below to download the data.
+Now you can simply run this command below to download the data. You only need to execute this once, as the data will be stored permanently in the Modal volume of your workspace.
 ```bash
-modal run experiments/libero/libero_utils.py::download_data
+modal run experiments/libero/libero_utils.py::download_libero_nora
 ```
 
 ## 2. Evaluate VLA Model
 
 Once you have downloaded LIBERO data, you are all set to evaluate your desired VLA model.
 
-Currently, the default setup is
+Currently, the default setup uses a A100 40GB GPU. If you would like to change this configuration, you can specify a `gpu` in the Modal app class definition of respective VLA model evaluation classes.
 
-- **GPU**: A100 40GB
-- **Eval Data**: LIBERO Spatial (10 episodes per task for 10 tasks; a total of 100 rollouts)
-- **VLA Model**: Pre-trained NORA model without fine-tuning
+For NORA, refer to [`nora_summary.py`](./policies/nora/nora_summary.py). For GR00T, refer to [`gr00t_summary.py`](./policies/gr00t/gr00t_summary.py).
 
-Simply run this command in your terminal to evaluate your VLA model on LIBERO:
+For instance, this is how the Modal app definition of `GR00TSummary` class is defined in [`gr00t_summary.py`](./policies/gr00t/gr00t_summary.py):
+```python
+@gr00t_app.cls(
+    image=gr00t_image,
+    volumes={
+        "/root/vla_test/data/libero/datasets": data_vol,
+        "/root/vla_test/rollouts": rollouts_vol,
+        "/root/vla_test/eval_summary": eval_summary_vol,
+    },
+    gpu="A100",
+    timeout=60*60*24,   # 24hr timeout
+    retries=3
+)
+class GR00TSummary():
+    ...
+```
+You can specify `gpu` from a variety of GPU options that Modal support: `["T4", "L4", "A10", "A100", "A100-40GB", "A100-80GB", "L40S", "H100 / H100!", "H200", "B200"]`. You can refer to the [Modal docs](https://modal.com/docs/guide/gpu#specifying-gpu-type) for greater detail in specifying gpu type and count.
+
+
+To evaluate a fine-tuned NORA pre-trained model on LIBERO Object with 50 rollouts per task, simply run this command below in your terminal:
 ```bash
-modal run model_summary.py::main
+modal run run_libero_eval.py::nora_eval --finetune-ok \
+                                        --eval-data-id "libero_object" \
+                                        --num-steps-wait 10 \
+                                        --num-trials-per-task 50
 ```
 
-If you would like to change the setup, you can modify the code in `main` local entrypoint of `model_summary.py`. 
-For example, to evaluate the fine-tuned NORA pre-trained model on LIBERO Object with 50 rollouts per task:
-```python
-@app.local_entrypoint()
-def main():
-    noraSummary = ModelSummary(
-        model_id="nora",
-        finetune_ok=True,
-        eval_data_id="libero_object",
-        num_steps_wait=10,
-        num_trials_per_task=50
-    )
-    noraSummary.eval_model_on_libero.remote()
+To evaluate GR00T on LIBERO, there is another parameter `replan_steps`, which represents the action chunk size.
+By default, GR00T uses `replan_steps = 16`.
+
+The following terminal command will run a fine-tuned gr00t model on LIBERO Goal with no action chunking and 10 rollouts per task:
+```bash
+modal run run_libero_eval.py::gr00t_eval --finetune-ok \
+                                         --eval-data-id "libero_goal" \
+                                         --num-steps-wait 10 \
+                                         --num-trials-per-task 10 \
+                                         --replan-steps 1
 ```
